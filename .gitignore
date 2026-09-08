@@ -1,0 +1,18 @@
+# Environments
+*.env
+.venv
+
+#Config
+*.toml
+
+.vscode/
+__pycache__/
+.DS_Store/
+.ruff_cache/
+
+#files
+.csv
+credit_info/credit_info.csv
+
+# temporary files
+tmp.py
