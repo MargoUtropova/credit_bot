@@ -7,9 +7,12 @@ from funcs.funcs import get_upcoming_payments, get_detailed_card_info, total_deb
 
 router = Router()
 
-@router.message(CommandStart())
+@router.message(CommandStart()) # сюда вставить запись chat_id при запуске бота
 async def process_start(message: Message):
     """При старте предлагаем главное меню."""
+    chat_id = message.chat.id
+    nickname = message.from_user.username
+    # здесь реализовать запись chat_id и nickname в users.csv
     await message.answer(
         text=LEXICON_RU['start'],
         reply_markup=menu_keyboard
@@ -17,13 +20,13 @@ async def process_start(message: Message):
 # ------------ handler для команды меню от старта до возврата в меню
 @router.message(Command("menu"))
 @router.message(F.text.strip() == "Назад в меню")
-async def menu_handler(message: Message):
+async def menu_handler(message: Message): # меню для всех одинаковое
     await message.answer(
         "Выберите нужное действие:",
         reply_markup=menu_keyboard
     )
 
-@router.callback_query(F.data == "menu")
+@router.callback_query(F.data == "menu") # меню для всех одинаковое
 async def process_menu_callback(callback: CallbackQuery):
     await callback.message.answer(
         "Выберите нужное действие:",
@@ -36,12 +39,14 @@ async def process_menu_callback(callback: CallbackQuery):
 
 @router.message(Command("check_payments"))
 async def process_payments(message:Message):
-    report = get_upcoming_payments()
+    chat_id = message.chat.id
+    report = get_upcoming_payments(chat_id)
     await message.answer(text=report)
 
 @router.callback_query(F.data == "check_payments")
 async def process_payments_callback(callback: CallbackQuery):
-    report = get_upcoming_payments()
+    chat_id = callback.message.chat.id
+    report = get_upcoming_payments(chat_id)
 
     await callback.message.answer(
         text=report,
@@ -55,18 +60,18 @@ async def process_payments_callback(callback: CallbackQuery):
 @router.callback_query(F.data == "cards")
 async def process_cards(event: Message | CallbackQuery):
 
-    cards_keyboard = get_cards_keyboard()
-
     if isinstance(event, Message):
+        chat_id = event.chat.id
         await event.answer(
             text="Выберите карту из списка ниже:",
-            reply_markup=cards_keyboard
+            reply_markup=get_cards_keyboard(chat_id)
         )
 
     elif isinstance(event, CallbackQuery):
+        chat_id = event.message.chat.id
         await event.message.answer(
             text="Выберите карту из списка ниже:",
-            reply_markup=cards_keyboard
+            reply_markup=get_cards_keyboard(chat_id)
         )
         await event.answer()
 
@@ -75,8 +80,8 @@ async def process_cards(event: Message | CallbackQuery):
 async def process_card_detail(callback: CallbackQuery):
 
     card_name = callback.data.split(":", 1)[1]
-
-    report = get_detailed_card_info(card_name)
+    chat_id = callback.message.chat.id
+    report = get_detailed_card_info(chat_id,card_name)
 
     await callback.message.answer(
         text=report,
@@ -90,13 +95,15 @@ async def process_card_detail(callback: CallbackQuery):
 @router.message(Command("total_debt"))
 @router.callback_query(F.data == "total_debt")
 async def get_total_debt(event: Message | CallbackQuery):
-
-    report = total_debt()
-
+    """ возвращает общий долг по всем картам пользователя"""
     if isinstance(event, Message):
+        chat_id = event.chat.id
+        report = total_debt(chat_id)
         await event.answer(text=report, reply_markup=back_button)
 
     elif isinstance(event, CallbackQuery):
+        chat_id = event.message.chat.id
+        report = total_debt(chat_id)
         await event.message.answer(text=report, reply_markup=back_button)
         await event.answer()
 
@@ -105,10 +112,10 @@ async def get_total_debt(event: Message | CallbackQuery):
 # callback_data="paid"
 @router.callback_query(F.data.startswith("paid:"))
 async def process_paid(callback: CallbackQuery):
-
+    """помечает карту как оплаченную"""
     card_name = callback.data.split(":", 1)[1]
-
-    report = mark_card_as_paid(card_name)
+    chat_id = callback.message.chat.id
+    report = mark_card_as_paid(chat_id,card_name)
 
     await callback.message.answer(text=report)
 

@@ -11,8 +11,8 @@ __pycache__/
 .ruff_cache/
 
 #files
-.csv
-credit_info/credit_info.csv
+*.csv
+credit_info/
 
 # temporary files
 tmp.py

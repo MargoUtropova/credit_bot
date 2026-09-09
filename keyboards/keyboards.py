@@ -49,11 +49,12 @@ def get_paid_keyboard(card_name: str) -> InlineKeyboardMarkup:
         ]
     )
 def get_cards_keyboard(
+    chat_id:int,
     file_path: str = r"credit_info\credit_info.csv"
 ) -> InlineKeyboardMarkup:
-
+    """клава создается под каждого пользователя индивидуально"""
     df = pd.read_csv(file_path, encoding="utf-8")
-
+    df = df[df['telegram_chat_id']==chat_id]
     keyboard = [
         [
             InlineKeyboardButton(
