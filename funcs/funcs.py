@@ -1,7 +1,40 @@
 import pandas as pd
 import traceback
+import os
 from datetime import date, timedelta
+
 from lexicon.lexicon import card_info
+
+def register_user(
+    nickname: str,
+    chat_id: int,
+    file_path: str = r"credit_info\users.csv"
+) -> None:
+    """Добавляет пользователя в users.csv, если его chat_id ещё не зарегистрирован."""
+
+    if os.path.exists(file_path):
+        df = pd.read_csv(file_path, encoding="utf-8")
+    else:
+        df = pd.DataFrame(columns=["nickname", "telegram_chat_id"])
+
+    if chat_id not in df["telegram_chat_id"].values:
+        new_user = pd.DataFrame([{
+            "nickname": nickname,
+            "telegram_chat_id": chat_id
+        }])
+
+        df = pd.concat([df, new_user], ignore_index=True)
+        df.to_csv(file_path, index=False, encoding="utf-8")
+
+def get_users(
+    file_path: str = r"credit_info\users.csv"
+) -> list[dict]:
+    """Возвращает список зарегистрированных пользователей."""
+
+    df = pd.read_csv(file_path, encoding="utf-8")
+
+    return df.to_dict("records")
+
 
 def get_upcoming_payments(chat_id:int, file_path: str = r"credit_info\credit_info.csv") -> str:
     """Ищет карты, которые еще не оплачены (paid == False)."""
@@ -13,7 +46,7 @@ def get_upcoming_payments(chat_id:int, file_path: str = r"credit_info\credit_inf
             if row['paid'] == False:
                 result += f"Банк: {row['card_name']}\n"
                 result += f"Сумма платежа: {row['min_pay']} руб.\n"
-                result += f"Оплатить до: {pd.to_datetime(row['pay_until']).strftime('%d.%m.%Y')}\n"
+                result += f"Оплатить до: <b>{pd.to_datetime(row['pay_until']).strftime('%d.%m.%Y')}</b>\n"
                 result += "───────────────────\n"
         if all(df['paid']) == True:
             result = "🎉 Отлично! Все минимальные платежи по картам внесены."
@@ -77,9 +110,10 @@ def mark_card_as_paid(
     """Ставит True в колонке paid для выбранной карты."""
 
     df = pd.read_csv(file_path, encoding="utf-8")
-     # Исправлено: добавил скобки вокруг всего условия
-    mask = (df['telegram_chat_id'] == chat_id) & (df['card_name'] == card_name)
 
+    mask = (
+    (df['telegram_chat_id'] == chat_id) & (df['card_name'].astype(str).str.strip() == card_name.strip())
+    )
     if mask.any():  # проверяем, найдена ли карта
         # Обновляем значения напрямую через .loc
         df.loc[mask, 'paid'] = True

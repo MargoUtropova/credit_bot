@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from config.config import Config, load_config
 from handlers import user, other
 from keyboards.set_menu import set_main_menu
+from services.notifications import payment_reminder
 
 # функция конфигурирования и запуска бота
 async def main() -> None:
@@ -20,6 +21,9 @@ async def main() -> None:
     )
     # Инициализируем бот и диспетчер
     bot = Bot(token=config.bot.token)
+    asyncio.create_task(
+    payment_reminder(bot)
+        )
     dp = Dispatcher()
 
     # Регистриуем роутеры в диспетчере
@@ -31,7 +35,7 @@ async def main() -> None:
 
      # Пропускаем накопившиеся апдейты и запускаем polling
     await bot.delete_webhook(drop_pending_updates=True)
-    await bot.delete_my_commands() # <--- ЭТА СТРОКА СТЕРЕТ СТАРЫЕ КОМАНДЫ ГАРАНТИРОВАННО
+
     await dp.start_polling(bot)
 
 

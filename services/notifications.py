@@ -3,8 +3,8 @@ from datetime import datetime, timedelta
 
 from aiogram import Bot
 
-from funcs.funcs import get_payments_for_reminder
-
+from funcs.funcs import get_payments_for_reminder, get_users
+from keyboards.keyboards import get_paid_keyboard
 
 async def send_payment_reminders(bot: Bot, chat_id: int):
     """Принимает объект бота и ID чата.
@@ -19,27 +19,34 @@ async def send_payment_reminders(bot: Bot, chat_id: int):
             "⚠️ Напоминание о платеже\n\n"
             f"Карта: {payment['card_name']}\n"
             f"Сумма платежа: {payment['min_pay']} руб.\n"
-            f"Оплатить до: {payment['pay_until']}"
+            f"Оплатить до: <b>{payment['pay_until']}</b>"
         )
 
         await bot.send_message(
             chat_id=chat_id,
-            text=text
+            text=text,
+            reply_markup=get_paid_keyboard(payment['card_name']),
+            parse_mode="HTML"
         )
 
 
-async def payment_reminder(bot: Bot, chat_id: int):
-    """Принимает объект бота и ID чата.
-    Запускает цикл проверки платежей: проверяет сразу после запуска,
-    если сейчас после 10:00, и затем каждый день в 10:00.
-    Ничего не возвращает.
+async def payment_reminder(bot: Bot):
+    """Проверяет платежи пользователей каждый день в 10:00.
+    Если бот запущен после 10:00, проверка выполняется сразу.
     """
     while True:
-
         now = datetime.now()
 
         if now.hour >= 10:
-            await send_payment_reminders(bot, chat_id)
+            users = get_users()
+
+            for user in users:
+                chat_id = user["telegram_chat_id"]
+
+                await send_payment_reminders(
+                    bot,
+                    chat_id
+                )
 
             next_run = (now + timedelta(days=1)).replace(
                 hour=10,

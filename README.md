@@ -9,6 +9,39 @@
 - Запоминает (записывает) данные через переписку и обновляет их в общей таблице
 
 
+## Структура проекта
+
+```text
+credit_bot/
+│
+├── config/
+│   └── config.py
+│
+├── credit_info/
+│   ├── credit_info.csv
+│   └── users.csv
+│
+├── funcs/
+│   └── funcs.py
+│
+├── handlers/
+│   ├── other.py
+│   └── user.py
+│
+├── keyboards/
+│   ├── keyboards.py
+│   └── set_menu.py
+│
+├── lexicon/
+│   └── lexicon.py
+│
+├── services/
+│   └── notifications.py
+│
+├── main.py
+└── README.md
+```
+
 Ниже инструкция "для чайников" как установить себе этого бота.
 --------------------------------------------------------------
 #Создать папку проекта, перейти в нее в терминале

@@ -3,7 +3,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
 from lexicon.lexicon import LEXICON_RU
 from keyboards.keyboards import menu_keyboard, get_cards_keyboard, get_paid_keyboard, back_button
-from funcs.funcs import get_upcoming_payments, get_detailed_card_info, total_debt, mark_card_as_paid
+from funcs.funcs import (get_upcoming_payments, get_detailed_card_info, total_debt, mark_card_as_paid, register_user)
 
 router = Router()
 
@@ -12,7 +12,12 @@ async def process_start(message: Message):
     """При старте предлагаем главное меню."""
     chat_id = message.chat.id
     nickname = message.from_user.username
-    # здесь реализовать запись chat_id и nickname в users.csv
+    # записываем данные о польз-ле в файл
+    register_user(
+        nickname=nickname,
+        chat_id=chat_id
+    )
+
     await message.answer(
         text=LEXICON_RU['start'],
         reply_markup=menu_keyboard
@@ -50,7 +55,8 @@ async def process_payments_callback(callback: CallbackQuery):
 
     await callback.message.answer(
         text=report,
-        reply_markup=back_button
+        reply_markup=back_button,
+        parse_mode="HTML"
     )
     # Убираем "крутилку" с кнопки
     await callback.answer()
