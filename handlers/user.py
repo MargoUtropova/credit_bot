@@ -21,6 +21,7 @@ from funcs.data import (
     update_card_field,
     update_card_timestamp,
     _load_credit_info,
+    delete_card
 )
 from funcs.validation import (
     normalize_date,
@@ -38,7 +39,8 @@ from keyboards.keyboards import (
     get_edit_field_keyboard,
     get_paid_edit_keyboard,
     get_paid_keyboard,
-    menu_keyboard,
+    menu_keyboard, get_cards_delete_keyboard,
+    get_delete_card_keyboard
 )
 from lexicon.lexicon import LEXICON_RU
 from states.states import CardForm
@@ -885,3 +887,62 @@ async def total_debt_handler(message: Message):
         f"💰 Общая сумма долга: <b>{debt_text}</b>",
         parse_mode="HTML"
     )
+
+
+# ----------------
+# УДАЛЕНИЕ КАРТЫ
+# --------------------------
+@router.callback_query(F.data == "edit_cards_list")
+async def edit_cards_list_handler(callback: CallbackQuery):
+    """Переходит в режим удаления карт."""
+
+    await callback.message.edit_text(
+        "Выберите карту, которую хотите удалить:",
+        # выводится список карт для выбора к удалению
+        reply_markup=get_cards_delete_keyboard(
+            callback.from_user.id,
+        ),
+    )
+
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("delete_card:"))
+async def delete_card_handler(callback: CallbackQuery):
+    """Запрашивает подтверждение удаления карты."""
+
+    card_name = callback.data.split(":", 1)[1]
+
+    keyboard = get_delete_card_keyboard(card_name)
+    # выводится клава из вариантов "Да/Назад в меню"
+    await callback.message.edit_text(
+        f"Удалить карту «{card_name}»?",
+        reply_markup=keyboard,
+    )
+
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("confirm_delete:"))
+async def confirm_delete_card_handler(callback: CallbackQuery):
+    """Удаляет выбранную карту после подтверждения."""
+
+    card_name = callback.data.split(":", 1)[1]
+
+    deleted = delete_card(
+        chat_id=callback.from_user.id,
+        card_name=card_name,
+    )
+
+    if deleted:
+        text = f"Карта «{card_name}» удалена."
+    else:
+        text = f"Карта «{card_name}» не найдена."
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_cards_keyboard(
+            callback.from_user.id,
+        ),
+    )
+
+    await callback.answer()

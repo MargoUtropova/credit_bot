@@ -7,7 +7,7 @@ from aiogram.types import (
     KeyboardButton,
     ReplyKeyboardMarkup,
 )
-
+from funcs.data import _load_credit_info
 from lexicon.lexicon import LEXICON_COMMANDS_RU
 
 
@@ -43,11 +43,11 @@ def _get_back_button() -> InlineKeyboardButton:
     )
 
 
-back_button = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [_get_back_button()],
-    ]
-)
+# back_button = InlineKeyboardMarkup(
+#     inline_keyboard=[
+#         [_get_back_button()],
+#     ]
+# )
 
 
 # ---------------------------------------------------------------------------
@@ -88,22 +88,18 @@ def get_paid_keyboard(card_name: str) -> InlineKeyboardMarkup:
 # Список карт
 # ---------------------------------------------------------------------------
 
-def get_cards_keyboard(
-    chat_id: int,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> InlineKeyboardMarkup:
+def get_cards_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     """Создаёт inline-клавиатуру со списком карт пользователя.
 
     Для каждой карты создаётся отдельная кнопка.
 
     Названия карт уникальны, поэтому card_name используется
     непосредственно в callback_data.
+
+    редактировать можно только свои карты
     """
 
-    df = pd.read_csv(
-        file_path,
-        encoding="utf-8",
-    )
+    df = _load_credit_info()
 
     user_cards = df[
         df["telegram_chat_id"].astype(str).str.strip()
@@ -132,7 +128,15 @@ def get_cards_keyboard(
                 )
             ]
         )
-
+     # Режим редактирования списка.
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                text="🗑 Редактировать список",
+                callback_data="edit_cards_list",
+            )
+        ]
+    )
     keyboard.append(
         [
             _get_back_button(),
@@ -144,22 +148,18 @@ def get_cards_keyboard(
     )
 
 # ---------клава без фильтра по пользователю ---
-def get_all_cards_keyboard(
-    # chat_id: int,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> InlineKeyboardMarkup:
+def get_all_cards_keyboard() -> InlineKeyboardMarkup:
     """Создаёт inline-клавиатуру со списком карт пользователя.
 
     Для каждой карты создаётся отдельная кнопка.
 
     Названия карт уникальны, поэтому card_name используется
     непосредственно в callback_data.
+
+    редактировать общий список нельзя
     """
 
-    user_cards = pd.read_csv(
-        file_path,
-        encoding="utf-8",
-    )
+    user_cards = _load_credit_info()
 
     keyboard = []
 
@@ -262,3 +262,52 @@ def get_paid_edit_keyboard() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+# ---------------------------------------------------
+#  клавиатура удаления карты из списка
+# та же клава со списком "мои карты", но для удаления
+# ---------------------------------------------------
+def get_cards_delete_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    """Создаёт клавиатуру для выбора карты, которую нужно удалить."""
+
+    df = _load_credit_info()
+
+    user_cards = df[
+        df["telegram_chat_id"].astype(str).str.strip()
+        == str(chat_id).strip()]
+
+    keyboard = []
+
+    for _, row in user_cards.iterrows():
+        raw_card_name = row["card_name"]
+
+        if pd.isna(raw_card_name):
+            continue
+
+        card_name = str(raw_card_name).strip()
+
+        if not card_name:
+            continue
+
+        keyboard.append([
+                InlineKeyboardButton(
+                    text=f"🗑 {card_name}",
+                    callback_data=f"delete_card:{card_name}",)])
+
+    keyboard.append([_get_back_button()])
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=keyboard,
+    )
+def get_delete_card_keyboard(
+            # chat_id: int,#нужен ли он или берется из хэндлера итак?
+                         card_name: str) -> InlineKeyboardMarkup:
+    """ создает клаву ДА/НЕТ для подтверждения удаления"""
+    keyboard = [
+        [InlineKeyboardButton(text="ДА", callback_data= f"confirm_delete:{card_name}"),
+        # InlineKeyboardButton(text="НЕТ"), #будет просто возврат в меню
+        _get_back_button()]
+    ]
+    return InlineKeyboardMarkup(
+            inline_keyboard=keyboard,
+        )

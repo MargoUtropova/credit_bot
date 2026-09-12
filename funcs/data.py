@@ -177,7 +177,7 @@ def create_empty_card(chat_id: int) -> int:
 
 
 def delete_card_row(chat_id: int, row_index: int) -> bool:
-    """Удалить строку карты, если она принадлежит пользователю."""
+    """Удалить строку карты при прерывании заполнения пользователем во время FSM"""
     df = _load_credit_info()
 
     if row_index not in df.index:
@@ -191,6 +191,39 @@ def delete_card_row(chat_id: int, row_index: int) -> bool:
     _save_credit_info(df)
     return True
 
+# Удаление карты из файла принудительно польз-лем
+def delete_card(
+    chat_id: int,
+    card_name: str,
+    # file_path: str = CREDIT_INFO_FILE,
+) -> bool:
+    """Удаляет карту пользователя из CSV.
+
+    Карта определяется одновременно по card_name и telegram_chat_id.
+
+    Возвращает:
+        True — карта найдена и удалена.
+        False — карта не найдена.
+    """
+
+    df = _load_credit_info()
+
+    mask = (
+        df["telegram_chat_id"].astype(str).str.strip()
+        == str(chat_id).strip()
+    ) & (
+        df["card_name"].astype(str).str.strip()
+        == str(card_name).strip()
+    )
+
+    if not mask.any():
+        return False
+
+    df = df.loc[~mask].copy() # все, что не совпадает по фильтру, удаляется
+
+    _save_credit_info(df)
+
+    return True
 
 # ----------------------------------------------------------------------
 # Изменение полей
