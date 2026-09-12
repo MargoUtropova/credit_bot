@@ -13,6 +13,8 @@ __pycache__/
 #files
 *.csv
 credit_info/
+__init__.py
+user_old.py
 
 # temporary files
 tmp.py

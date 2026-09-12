@@ -7,4 +7,3 @@ class CardForm(StatesGroup):
     """
     editing = State()
     waiting_for_value = State()
-    

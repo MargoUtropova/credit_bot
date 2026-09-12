@@ -70,16 +70,16 @@ def get_paid_keyboard(card_name: str) -> InlineKeyboardMarkup:
                     text="Оплачено",
                     callback_data=f"paid:{card_name}",
                 )
-            ],
-            [
+            ,
+
                 InlineKeyboardButton(
                     text="Изменить",
                     callback_data=f"edit:{card_name}",
                 )
-            ],
-            [
+            ,
+
                 _get_back_button(),
-            ],
+        ]
         ]
     )
 
@@ -95,6 +95,7 @@ def get_cards_keyboard(
     """Создаёт inline-клавиатуру со списком карт пользователя.
 
     Для каждой карты создаётся отдельная кнопка.
+
     Названия карт уникальны, поэтому card_name используется
     непосредственно в callback_data.
     """
@@ -112,9 +113,14 @@ def get_cards_keyboard(
     keyboard = []
 
     for _, row in user_cards.iterrows():
-        card_name = str(row["card_name"]).strip()
+        raw_card_name = row["card_name"]
 
-        # Не показываем пустые названия карт.
+        # Не показываем пустые названия карт и NaN.
+        if pd.isna(raw_card_name):
+            continue
+
+        card_name = str(raw_card_name).strip()
+
         if not card_name:
             continue
 
@@ -137,6 +143,56 @@ def get_cards_keyboard(
         inline_keyboard=keyboard,
     )
 
+# ---------клава без фильтра по пользователю ---
+def get_all_cards_keyboard(
+    # chat_id: int,
+    file_path: str = r"credit_info/credit_info.csv",
+) -> InlineKeyboardMarkup:
+    """Создаёт inline-клавиатуру со списком карт пользователя.
+
+    Для каждой карты создаётся отдельная кнопка.
+
+    Названия карт уникальны, поэтому card_name используется
+    непосредственно в callback_data.
+    """
+
+    user_cards = pd.read_csv(
+        file_path,
+        encoding="utf-8",
+    )
+
+    keyboard = []
+
+    for _, row in user_cards.iterrows():
+        raw_card_name = row["card_name"]
+
+        # Не показываем пустые названия карт и NaN.
+        if pd.isna(raw_card_name):
+            continue
+
+        card_name = str(raw_card_name).strip()
+
+        if not card_name:
+            continue
+
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=card_name,
+                    callback_data=f"card:{card_name}",
+                )
+            ]
+        )
+
+    keyboard.append(
+        [
+            _get_back_button(),
+        ]
+    )
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=keyboard,
+    )
 
 # ---------------------------------------------------------------------------
 # Клавиатура редактирования обычного поля
@@ -147,7 +203,8 @@ def get_edit_field_keyboard(field: str) -> InlineKeyboardMarkup:
 
     Кнопки:
     - «Изменить» — пользователь вводит новое значение;
-    - «Далее» — оставить текущее значение и перейти дальше.
+    - «Далее» — оставить текущее значение и перейти дальше;
+    - «Назад в меню» — выйти из редактирования.
     """
 
     return InlineKeyboardMarkup(
@@ -156,13 +213,12 @@ def get_edit_field_keyboard(field: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Изменить",
                     callback_data=f"field_edit:{field}",
-                )
-            ],
-            [
+                ),
                 InlineKeyboardButton(
                     text="Далее",
                     callback_data=f"field_next:{field}",
-                )
+                ),
+                _get_back_button(),
             ],
         ]
     )
@@ -188,18 +244,21 @@ def get_paid_edit_keyboard() -> InlineKeyboardMarkup:
                     text="✅ Оплачено",
                     callback_data="set_paid:true",
                 )
-            ],
-            [
+            ,
+
                 InlineKeyboardButton(
                     text="❌ Не оплачено",
                     callback_data="set_paid:false",
-                )
-            ],
-            [
-                InlineKeyboardButton(
+                )]
+            ,
+
+                [InlineKeyboardButton(
                     text="Далее",
                     callback_data="field_next:paid",
                 )
-            ],
+            ,
+
+                _get_back_button(),
+            ]
         ]
     )

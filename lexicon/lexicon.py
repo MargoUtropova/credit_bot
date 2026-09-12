@@ -70,6 +70,7 @@ LEXICON_COMMANDS_RU = {
     "cards": "Показать мои карты",
     "check_payments": "Ближайшие платежи",
     "add_card": "Добавить информацию о карте",
+    "all_cards": "Просмотр всех карт",
     "total_debt": "Показать общую сумму долга по кредитам",
 }
 
@@ -105,7 +106,9 @@ get_detailed_card_info() из funcs.py.
     False → ❌ Нет (Нужно оплатить)
 """
 
-card_info = {
+CARD_INFO_NAMES = {
+    # grace_till,check_date,min_pay,pay_until,debt,limit,updated,paid,card_name,telegram_chat_id,bic,account
+    "card_name": "Название карты",
     "grace_till": "Грейс-период",
     "check_date": "Дата выписки",
     "min_pay": "Минимальный платеж",
@@ -116,4 +119,29 @@ card_info = {
     "paid": "Оплачено",
     "bic":"БИК",
     "account":"номер счета",
+    "telegram_chat_id": "айди",
 }
+CARD_FIELDS_LONG = [
+    "card_name",
+    "grace_till",
+    "check_date",
+    "min_pay",
+    "pay_until",
+    "debt",
+    "limit",
+    # "updated",# делаем недоступным пользователю
+    "paid",
+    "bic",
+    "account",
+]
+
+CARD_FIELDS_SHORT = [
+    "pay_until",
+    "min_pay",
+    "debt",
+]
+# ВАЖНО: именно такой порядок колонок у users.csv.
+USERS_COLUMNS = [
+    "nickname",
+    "telegram_chat_id",
+]

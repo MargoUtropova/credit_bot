@@ -1,728 +1,225 @@
 import os
-from datetime import date, timedelta
+from datetime import date
 
 import pandas as pd
+import traceback
+from lexicon.lexicon import (CARD_FIELDS_LONG, CARD_FIELDS_NAMES,
+                               CARD_FIELDS_SHORT, USERS_COLUMNS)
+CREDIT_INFO_FILE = r"credit_info/credit_info.csv"
+USERS_FILE = r"credit_info/users.csv"
 
-from lexicon.lexicon import card_info
+# ----------------------------------------------------------------------
+# Работа с credit_info.csv
+# ----------------------------------------------------------------------
+
+def _load_credit_info() -> pd.DataFrame:
+    """Загрузить credit_info.csv и привести его к ожидаемой структуре."""
+
+    if not os.path.exists(CREDIT_INFO_FILE):
+        return pd.DataFrame(columns=CARD_FIELDS_NAMES.keys())
+
+    df = pd.read_csv(CREDIT_INFO_FILE, encoding="utf-8")
+
+    # Если каких-то колонок нет — создаём их.
+    for column in CARD_FIELDS_NAMES:
+        if column not in df.columns:
+            df[column] = ""
+
+    # Оставляем колонки в согласованном порядке.
+    return df[CARD_FIELDS_LONG]
 
 
-# ============================================================================
-# Поля, доступные для добавления и редактирования карты
-# ============================================================================
+def _save_credit_info(df: pd.DataFrame) -> None:
+    """Сохранить таблицу кредитных карт."""
 
-"""
-Поля, которые пользователь проходит последовательно
-в FSM при добавлении или редактировании карты.
-
-Формат элемента:
-
-    (
-        имя_столбца_в_CSV,
-        название_для_пользователя
+    os.makedirs(os.path.dirname(CREDIT_INFO_FILE), exist_ok=True)
+    df.to_csv(
+        CREDIT_INFO_FILE,
+        index=False,
+        encoding="utf-8",
     )
 
-Порядок полей здесь определяет порядок их показа
-в handlers/user.py.
 
-Поле `updated` намеренно отсутствует:
-оно обновляется ботом автоматически после завершения формы.
+# ----------------------------------------------------------------------
+# Работа с users.csv
+# ----------------------------------------------------------------------
 
-Поле `telegram_chat_id` также отсутствует:
-оно никогда не редактируется пользователем.
-"""
+def _load_users() -> pd.DataFrame:
+    """Загрузить users.csv и привести его к ожидаемой структуре."""
 
-CARD_FIELDS = [
-    ("card_name", "Название карты"),
-    ("grace_till", "Грейс-период до"),
-    ("check_date", "Дата проверки"),
-    ("min_pay", "Минимальный платеж"),
-    ("pay_until", "Оплатить до"),
-    ("debt", "Долг"),
-    ("limit", "Лимит"),
-    ("paid", "Статус оплаты"),
-]
+    if not os.path.exists(USERS_FILE):
+        return pd.DataFrame(columns=USERS_COLUMNS)
+
+    df = pd.read_csv(USERS_FILE, encoding="utf-8")
+
+    for column in USERS_COLUMNS:
+        if column not in df.columns:
+            df[column] = ""
+
+    # ВАЖНО: nickname идёт первым, telegram_chat_id вторым.
+    return df[USERS_COLUMNS]
 
 
-# ============================================================================
+def _save_users(df: pd.DataFrame) -> None:
+    """Сохранить таблицу пользователей."""
+
+    os.makedirs(os.path.dirname(USERS_FILE), exist_ok=True)
+    df.to_csv(
+        USERS_FILE,
+        index=False,
+        encoding="utf-8",
+    )
+
+
+# ----------------------------------------------------------------------
 # Вспомогательные функции
-# ============================================================================
+# ----------------------------------------------------------------------
 
-def _is_paid(value) -> bool:
-    """
-    Приводит значение поля `paid` из CSV к типу bool.
+def _is_empty(value) -> bool:
+    """Проверить, является ли значение пустым."""
 
-    После чтения CSV значение может быть:
-        True
-        False
-        "True"
-        "False"
-        "true"
-        "false"
-        1
-        0
-
-    Функция нужна, чтобы все остальные функции одинаково
-    определяли статус оплаты.
-
-    Возвращает:
-        True — если карта оплачена;
-        False — если карта не оплачена.
-    """
-    if isinstance(value, bool):
-        return value
-
-    if pd.isna(value):
-        return False
-
-    value = str(value).strip().lower()
-
-    return value in {
-        "true",
-        "1",
-        "yes",
-        "да",
-    }
+    return pd.isna(value) or str(value).strip() == ""
 
 
 def _format_date(value) -> str:
-    """
-    Форматирует дату из CSV для отображения пользователю.
+    """Привести дату к формату ДД.ММ.ГГГГ."""
 
-    Внутри CSV дата обычно хранится в формате:
-
-        YYYY-MM-DD
-
-    Пользователю показывается:
-
-        DD.MM.YYYY
-
-    Если дата отсутствует или некорректна,
-    возвращается символ «—».
-    """
-    if pd.isna(value) or str(value).strip() == "":
+    if _is_empty(value):
         return "—"
 
     try:
-        return pd.to_datetime(value).strftime("%d.%m.%Y")
+        parsed_date = pd.to_datetime(
+            str(value).strip(),
+            format="%Y-%m-%d",
+            errors="raise",
+        )
+        return parsed_date.strftime("%d.%m.%Y")
+
     except (ValueError, TypeError):
-        return "—"
+        return str(value).strip()
 
 
-def _format_number(value) -> str:
-    """
-    Форматирует числовое значение для отображения пользователю.
+def _format_money(value) -> str:
+    """Привести денежное значение к читаемому виду."""
 
-    Например:
-
-        45000.0 -> "45000"
-        1250.50 -> "1250.5"
-
-    Пустое значение отображается как «—».
-    """
-    if pd.isna(value) or str(value).strip() == "":
+    if _is_empty(value):
         return "—"
 
     try:
         number = float(value)
 
         if number.is_integer():
-            return str(int(number))
+            return f"{int(number):,}".replace(",", " ")
 
-        return str(number)
+        return f"{number:,.2f}".replace(",", " ").replace(".", ",")
 
     except (ValueError, TypeError):
-        return str(value)
+        return str(value).strip()
 
 
-def _chat_id_matches(value, chat_id: int) -> bool:
+# ----------------------------------------------------------------------
+# Пользователи
+# ----------------------------------------------------------------------
+
+def register_user(nickname: str, chat_id: int) -> None:
     """
-    Проверяет принадлежность строки конкретному пользователю.
+    Зарегистрировать пользователя.
 
-    Значение telegram_chat_id после чтения CSV может иметь
-    тип int или str, поэтому оба значения приводятся к строке.
-
-    Возвращает True, если ID совпадают.
+    Если telegram_chat_id уже существует, обновляем nickname.
     """
-    return str(value).strip() == str(chat_id).strip()
 
+    users = _load_users()
 
-# ============================================================================
-# Работа с пользователями
-# ============================================================================
+    chat_id_str = str(chat_id)
 
-def register_user(
-    nickname: str | None,
-    chat_id: int,
-    file_path: str = r"credit_info/users.csv",
-) -> None:
-    """
-    Регистрирует пользователя в users.csv.
-
-    Если telegram_chat_id уже существует в таблице,
-    новая строка не создаётся.
-
-    Параметры:
-        nickname:
-            Username пользователя Telegram.
-
-        chat_id:
-            Telegram ID пользователя.
-
-        file_path:
-            Путь к файлу users.csv.
-    """
-    if os.path.exists(file_path):
-        df = pd.read_csv(
-            file_path,
-            encoding="utf-8",
-        )
-    else:
-        df = pd.DataFrame(
-            columns=[
-                "nickname",
-                "telegram_chat_id",
-            ]
-        )
-
-    existing_ids = (
-        df["telegram_chat_id"]
+    mask = (
+        users["telegram_chat_id"]
         .astype(str)
-        .tolist()
+        .str.strip()
+        == chat_id_str
     )
 
-    if str(chat_id) not in existing_ids:
-        new_user = pd.DataFrame(
-            [
-                {
-                    "nickname": nickname,
-                    "telegram_chat_id": chat_id,
-                }
-            ]
-        )
+    if mask.any():
+        index = users.index[mask][0]
+        users.at[index, "nickname"] = nickname
+    else:
+        users.loc[len(users)] = {
+            "nickname": nickname,
+            "telegram_chat_id": chat_id,
+        }
 
-        df = pd.concat(
-            [df, new_user],
-            ignore_index=True,
-        )
-
-        df.to_csv(
-            file_path,
-            index=False,
-            encoding="utf-8",
-        )
+    _save_users(users)
 
 
-def get_users(
-    file_path: str = r"credit_info/users.csv",
-) -> list[dict]:
+def get_users() -> list[int]:
     """
-    Возвращает список зарегистрированных пользователей.
+    Получить telegram_chat_id всех зарегистрированных пользователей.
 
-    Результат имеет формат:
-
-        [
-            {
-                "nickname": "...",
-                "telegram_chat_id": 123456789
-            },
-            ...
-        ]
-
-    Используется сервисами, которым необходимо
-    получить список пользователей бота.
+    Используется для глобальной рассылки уведомлений.
     """
-    if not os.path.exists(file_path):
-        return []
 
-    df = pd.read_csv(
-        file_path,
-        encoding="utf-8",
-    )
+    users = _load_users()
 
-    return df.to_dict(
-        orient="records"
-    )
+    result = []
 
-
-# ============================================================================
-# Платежи
-# ============================================================================
-
-def get_upcoming_payments(
-    chat_id: int,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> str:
-    """
-    Показывает пользователю все неоплаченные минимальные платежи.
-
-    Выбираются только карты текущего пользователя.
-
-    В отчёт попадают карты, у которых:
-        - paid == False;
-        - указана дата `pay_until`.
-
-    Формат сообщения:
-
-        Необходимо оплатить:
-
-        Банк: ...
-        Сумма платежа: ... руб.
-        Оплатить до: DD.MM.YYYY
-
-    Если у пользователя нет неоплаченных платежей,
-    возвращается сообщение:
-
-        🎉 Отлично! Все минимальные платежи по картам внесены.
-
-    Если у пользователя вообще нет карт,
-    также возвращается сообщение об отсутствии платежей.
-    """
-    if not os.path.exists(file_path):
-        return "❌ Файл с данными карт не найден."
-
-    try:
-        df = pd.read_csv(
-            file_path,
-            encoding="utf-8",
-        )
-
-        df = df[
-            df["telegram_chat_id"].apply(
-                lambda value: _chat_id_matches(value, chat_id)
-            )
-        ]
-
-        unpaid_cards = []
-
-        for _, row in df.iterrows():
-            if _is_paid(row["paid"]):
-                continue
-
-            if (
-                pd.isna(row["pay_until"])
-                or str(row["pay_until"]).strip() == ""
-            ):
-                continue
-
-            pay_until = _format_date(
-                row["pay_until"]
-            )
-
-            unpaid_cards.append(
-                (
-                    f"Банк: {row['card_name']}\n"
-                    f"Сумма платежа: "
-                    f"{_format_number(row['min_pay'])} руб.\n"
-                    f"Оплатить до: "
-                    f"<b>{pay_until}</b>\n"
-                    f"───────────────────\n"
-                )
-            )
-
-        if not unpaid_cards:
-            return (
-                "🎉 Отлично! Все минимальные платежи "
-                "по картам внесены."
-            )
-
-        return (
-            "Необходимо оплатить:\n\n"
-            + "".join(unpaid_cards)
-        )
-
-    except Exception:
-        return "❌ Не удалось получить информацию о платежах."
-
-
-# ============================================================================
-# Информация по карте
-# ============================================================================
-
-def get_detailed_card_info(
-    chat_id: int,
-    card_name_btn: str,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> str:
-    """
-    Возвращает подробную информацию по выбранной карте.
-
-    Карта ищется по:
-        1. telegram_chat_id пользователя;
-        2. названию карты.
-
-    Название карты сравнивается после удаления
-    случайных пробелов в начале и конце.
-
-    Порядок отображения полей определяется словарём
-    `card_info` из lexicon.py.
-
-    Даты:
-        DD.MM.YYYY
-
-    Статус оплаты:
-        ✅ Да (Оплачено)
-        ❌ Нет (Нужно оплатить)
-
-    Пустые значения:
-        —
-
-    Возвращает:
-        строку с информацией по карте.
-    """
-    if not os.path.exists(file_path):
-        return "❌ Файл с данными карт не найден."
-
-    try:
-        df = pd.read_csv(
-            file_path,
-            encoding="utf-8",
-        )
-
-        df = df[
-            df["telegram_chat_id"].apply(
-                lambda value: _chat_id_matches(value, chat_id)
-            )
-        ]
-
-        clean_btn = card_name_btn.strip()
-
-        for _, row in df.iterrows():
-            current_label = str(
-                row["card_name"]
-            ).strip()
-
-            if current_label != clean_btn:
-                continue
-
-            result = (
-                f"Информация по карте "
-                f"{current_label}:\n\n"
-            )
-
-            # Порядок вывода определяется card_info.
-            for key_column, friendly_name in card_info.items():
-
-                if key_column not in df.columns:
-                    continue
-
-                value = row[key_column]
-
-                # Даты.
-                if key_column in {
-                    "grace_till",
-                    "check_date",
-                    "pay_until",
-                    "updated",
-                }:
-                    value = _format_date(value)
-
-                # Статус оплаты.
-                elif key_column == "paid":
-                    if _is_paid(value):
-                        value = "✅ Да (Оплачено)"
-                    else:
-                        value = "❌ Нет (Нужно оплатить)"
-
-                # Числовые значения.
-                elif key_column in {
-                    "min_pay",
-                    "debt",
-                    "limit",
-                }:
-                    value = _format_number(value)
-
-                # Остальные значения.
-                elif pd.isna(value) or str(value).strip() == "":
-                    value = "—"
-
-                result += (
-                    f"{friendly_name}: {value}\n"
-                )
-
-            return result
-
-        return (
-            f"❌ Карта «{clean_btn}» "
-            "не найдена в таблице базы данных."
-        )
-
-    except Exception:
-        return "❌ Не удалось получить информацию о карте."
-
-
-# ============================================================================
-# Общий долг
-# ============================================================================
-
-def total_debt(
-    chat_id: int,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> str:
-    """
-    Возвращает общую сумму долга пользователя.
-
-    Суммируются значения поля `debt`
-    только по картам текущего пользователя.
-
-    Пустые и некорректные значения не учитываются.
-
-    Пример результата:
-
-        Общий долг по всем картам: 125000 рублей
-    """
-    if not os.path.exists(file_path):
-        return "❌ Файл с данными карт не найден."
-
-    try:
-        df = pd.read_csv(
-            file_path,
-            encoding="utf-8",
-        )
-
-        df = df[
-            df["telegram_chat_id"].apply(
-                lambda value: _chat_id_matches(value, chat_id)
-            )
-        ]
-
-        if df.empty:
-            return "Общий долг по всем картам: 0 рублей."
-
-        debt_values = pd.to_numeric(
-            df["debt"],
-            errors="coerce",
-        ).fillna(0)
-
-        total = debt_values.sum()
-
-        if float(total).is_integer():
-            total_text = str(int(total))
-        else:
-            total_text = str(total)
-
-        return (
-            f"Общий долг по всем картам: "
-            f"{total_text} рублей."
-        )
-
-    except Exception:
-        return "❌ Не удалось рассчитать общий долг."
-
-
-# ============================================================================
-# Быстрая отметка карты как оплаченной
-# ============================================================================
-
-def mark_card_as_paid(
-    chat_id: int,
-    card_name: str,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> str:
-    """
-    Быстро отмечает выбранную карту как оплаченную.
-
-    Используется кнопкой:
-
-        Оплачено
-
-    на экране подробной информации по карте.
-
-    Изменяет:
-        paid = True
-        updated = текущая дата
-
-    FSM при этом не запускается.
-
-    Возвращает сообщение об успешном изменении
-    или об отсутствии карты.
-    """
-    if not os.path.exists(file_path):
-        return "❌ Файл с данными карт не найден."
-
-    try:
-        df = pd.read_csv(
-            file_path,
-            encoding="utf-8",
-        )
-
-        mask = (
-            df["telegram_chat_id"].apply(
-                lambda value: _chat_id_matches(value, chat_id)
-            )
-            & (
-                df["card_name"]
-                .astype(str)
-                .str.strip()
-                == card_name.strip()
-            )
-        )
-
-        if not mask.any():
-            return (
-                f"❌ Карта «{card_name}» "
-                "не найдена."
-            )
-
-        df.loc[mask, "paid"] = True
-
-        df.loc[
-            mask,
-            "updated",
-        ] = date.today().strftime(
-            "%d.%m.%Y"
-        )
-
-        df.to_csv(
-            file_path,
-            index=False,
-            encoding="utf-8",
-        )
-
-        return (
-            f"✅ Карта «{card_name}» "
-            "отмечена как оплаченная."
-        )
-
-    except Exception:
-        return (
-            "❌ Не удалось изменить "
-            "статус оплаты."
-        )
-
-
-# ============================================================================
-# Напоминания
-# ============================================================================
-
-def get_payments_for_reminder(
-    chat_id: int,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> list[dict]:
-    """
-    Возвращает карты, по которым минимальный платёж
-    необходимо внести через 2 дня.
-
-    Выбираются только карты текущего пользователя.
-
-    Игнорируются:
-        - уже оплаченные карты;
-        - карты без даты `pay_until`.
-
-    Формат результата:
-
-        [
-            {
-                "card_name": "Т-Банк 1234",
-                "min_pay": 5000,
-                "pay_until": "12.09.2026"
-            },
-            ...
-        ]
-
-    Функция используется сервисом уведомлений.
-    """
-    if not os.path.exists(file_path):
-        return []
-
-    df = pd.read_csv(
-        file_path,
-        encoding="utf-8",
-    )
-
-    df = df[
-        df["telegram_chat_id"].apply(
-            lambda value: _chat_id_matches(value, chat_id)
-        )
-    ]
-
-    today = date.today()
-    reminder_date = today + timedelta(days=2)
-
-    reminders = []
-
-    for _, row in df.iterrows():
-
-        # Оплаченные карты не напоминаем.
-        if _is_paid(row["paid"]):
-            continue
-
-        # Карты без даты платежа пропускаем.
-        if (
-            pd.isna(row["pay_until"])
-            or str(row["pay_until"]).strip() == ""
-        ):
+    for value in users["telegram_chat_id"]:
+        if _is_empty(value):
             continue
 
         try:
-            pay_until = pd.to_datetime(
-                row["pay_until"]
-            ).date()
+            result.append(int(float(value)))
         except (ValueError, TypeError):
             continue
 
-        if pay_until != reminder_date:
-            continue
-
-        reminders.append(
-            {
-                "card_name": str(
-                    row["card_name"]
-                ).strip(),
-                "min_pay": row["min_pay"],
-                "pay_until": pay_until.strftime(
-                    "%d.%m.%Y"
-                ),
-            }
-        )
-
-    return reminders
+    return result
 
 
-# ============================================================================
-# Создание новой карты
-# ============================================================================
-
-def create_empty_card(
-    chat_id: int,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> int:
+def _get_username(chat_id: int) -> str:
     """
-    Создаёт пустую строку новой карты.
+    Найти nickname пользователя по telegram_chat_id.
 
-    Строка создаётся сразу после команды /add_card.
-    Затем её индекс сохраняется в FSM.
-
-    Начальные значения:
-
-        card_name = ""
-        grace_till = ""
-        check_date = ""
-        min_pay = ""
-        pay_until = ""
-        debt = ""
-        limit = ""
-        updated = ""
-        paid = False
-        telegram_chat_id = chat_id
-
-    Возвращает:
-        индекс созданной строки.
-
-    Если пользователь отменит добавление карты,
-    handlers/user.py удалит эту строку через
-    delete_card_row().
+    Если пользователь не найден, возвращается запасное значение.
     """
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(
-            f"Файл не найден: {file_path}"
-        )
 
-    df = pd.read_csv(
-        file_path,
-        encoding="utf-8",
+    users = _load_users()
+
+    mask = (
+        users["telegram_chat_id"]
+        .astype(str)
+        .str.strip()
+        == str(chat_id).strip()
     )
 
-    new_card = {
+    matched = users.loc[mask]
+
+    if matched.empty:
+        return "Пользователь"
+
+    nickname = matched.iloc[0]["nickname"]
+
+    if _is_empty(nickname):
+        return "Пользователь"
+
+    return str(nickname).strip()
+
+
+# ----------------------------------------------------------------------
+# Создание / удаление карт
+# ----------------------------------------------------------------------
+
+def create_empty_card(chat_id: int) -> int:
+    """
+    Немедленно создать пустую строку новой карты.
+
+    Возвращает индекс созданной строки.
+
+    Это нужно для FSM: если добавление будет прервано,
+    строку можно будет полностью удалить.
+    """
+
+    df = _load_credit_info()
+
+    new_row = {
         "grace_till": "",
         "check_date": "",
         "min_pay": "",
@@ -735,287 +232,362 @@ def create_empty_card(
         "telegram_chat_id": chat_id,
     }
 
-    df = pd.concat(
-        [
-            df,
-            pd.DataFrame([new_card]),
-        ],
-        ignore_index=True,
-    )
+    df.loc[len(df)] = new_row
 
-    df.to_csv(
-        file_path,
-        index=False,
-        encoding="utf-8",
-    )
+    _save_credit_info(df)
 
-    return int(df.index[-1])
+    return df.index[-1]
 
 
-# ============================================================================
-# Поиск строки карты
-# ============================================================================
-
-def get_card_row_index(
-    chat_id: int,
-    card_name: str,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> int | None:
+def delete_card_row(chat_id: int, row_index: int) -> bool:
     """
-    Возвращает индекс строки выбранной карты.
+    Удалить строку карты.
 
-    Карта ищется одновременно по:
-
-        telegram_chat_id
-        card_name
-
-    Название карты сравнивается после удаления
-    пробелов в начале и конце.
-
-    Индекс строки используется в FSM редактирования.
-
-    Это важно, потому что `card_name` можно изменить.
-    После того как карта найдена, FSM работает именно
-    с row_index, а не повторно ищет карту по названию.
-
-    Возвращает:
-        int — индекс найденной строки;
-        None — если карта не найдена.
+    Удаление разрешено только если строка принадлежит текущему пользователю.
     """
-    if not os.path.exists(file_path):
-        return None
 
-    df = pd.read_csv(
-        file_path,
-        encoding="utf-8",
-    )
+    df = _load_credit_info()
+
+    if row_index not in df.index:
+        return False
+
+    row_chat_id = str(df.at[row_index, "telegram_chat_id"]).strip()
+
+    if row_chat_id != str(chat_id).strip():
+        return False
+
+    df = df.drop(index=row_index).reset_index(drop=True)
+
+    _save_credit_info(df)
+
+    return True
+
+
+# ----------------------------------------------------------------------
+# Поиск карт
+# ----------------------------------------------------------------------
+
+def get_card_row_index(card_name: str):
+    """
+    Найти индекс запрошеной карты .
+    """
+
+    df = _load_credit_info()
 
     mask = (
-        df["telegram_chat_id"].apply(
-            lambda value: _chat_id_matches(value, chat_id)
-        )
-        & (
-            df["card_name"]
-            .astype(str)
-            .str.strip()
-            == card_name.strip()
-        )
+        df["card_name"].fillna("").astype(str).str.strip() == card_name.strip()
     )
 
-    indexes = df.index[mask].tolist()
+    matched = df.index[mask]
 
-    if not indexes:
+    if len(matched) == 0:
         return None
 
-    return int(indexes[0])
+    return matched[0]
 
 
-# ============================================================================
-# Изменение одного поля карты
-# ============================================================================
+# ----------------------------------------------------------------------
+# Изменение полей карты
+# ----------------------------------------------------------------------
 
 def update_card_field(
     chat_id: int,
     row_index: int,
     field: str,
     value,
-    file_path: str = r"credit_info/credit_info.csv",
 ) -> bool:
     """
-    Изменяет одно разрешённое поле конкретной карты.
+    Немедленно изменить поле карты и сохранить CSV.
 
-    Разрешённые поля:
+    telegram_chat_id изменить через эту функцию нельзя.
 
-        card_name
-        grace_till
-        check_date
-        min_pay
-        pay_until
-        debt
-        limit
-        paid
-
-    Поля `updated` и `telegram_chat_id`
-    через эту функцию изменить нельзя.
-
-    Проверяется:
-        1. существует ли указанная строка;
-        2. принадлежит ли она текущему пользователю;
-        3. разрешено ли изменение указанного поля.
-
-    Особое правило:
-
-        Если изменяется `grace_till`,
-        автоматически устанавливается:
-
-            paid = False
-
-    При этом простое нажатие «Далее» на поле `grace_till`
-    не вызывает эту функцию и поэтому не сбрасывает оплату.
-
-    Возвращает:
-        True — если изменение успешно сохранено;
-        False — если изменить поле не удалось.
+    При фактическом изменении grace_till автоматически устанавливается
+    paid=False.
     """
-    allowed_fields = {
-        "card_name",
-        "grace_till",
-        "check_date",
-        "min_pay",
-        "pay_until",
-        "debt",
-        "limit",
-        "paid",
-    }
+
+    allowed_fields = {field_name for field_name, _ in CARD_FIELDS_NAMES.items()}
 
     if field not in allowed_fields:
         return False
 
-    if not os.path.exists(file_path):
-        return False
-
-    df = pd.read_csv(
-        file_path,
-        encoding="utf-8",
-    )
+    df = _load_credit_info()
 
     if row_index not in df.index:
         return False
 
-    # Проверяем принадлежность строки пользователю.
-    if not _chat_id_matches(
-        df.loc[row_index, "telegram_chat_id"],
-        chat_id,
-    ):
+    # Проверяем владельца карты.
+    row_chat_id = str(df.at[row_index, "telegram_chat_id"]).strip()
+
+    if row_chat_id != str(chat_id).strip():
         return False
 
-    # Изменяем выбранное поле.
-    df.loc[row_index, field] = value
-
-    # Если изменён грейс-период,
-    # текущий статус оплаты сбрасывается.
+    # Для grace_till проверяем, действительно ли значение изменилось.
     if field == "grace_till":
-        df.loc[row_index, "paid"] = False
+        old_value = df.at[row_index, "grace_till"]
 
-    df.to_csv(
-        file_path,
-        index=False,
-        encoding="utf-8",
-    )
+        old_empty = _is_empty(old_value)
+        new_empty = _is_empty(value)
+
+        old_normalized = "" if old_empty else str(old_value).strip()
+        new_normalized = "" if new_empty else str(value).strip()
+
+        if old_normalized != new_normalized:
+            df.at[row_index, "grace_till"] = value
+
+            # Изменение грейс-периода означает, что старый статус оплаты
+            # больше нельзя считать актуальным.
+            df.at[row_index, "paid"] = False
+
+        _save_credit_info(df)
+        return True
+
+    df.at[row_index, field] = value
+
+    _save_credit_info(df)
 
     return True
 
 
-# ============================================================================
-# Обновление даты изменения
-# ============================================================================
-
-def update_card_timestamp(
-    chat_id: int,
-    row_index: int,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> bool:
+def update_card_timestamp(chat_id: int, row_index: int) -> bool:
     """
-    Обновляет поле `updated` текущей датой.
+    Обновить поле updated сегодняшней датой.
 
-    Формат даты:
-
-        DD.MM.YYYY
-
-    Поле обновляется автоматически после полного завершения
-    FSM добавления или редактирования карты.
-
-    Пользователь не вводит это значение вручную.
-
-    Возвращает:
-        True — если дата успешно обновлена;
-        False — если строка не найдена или не принадлежит
-        пользователю.
+    Это поле пользователь вручную не редактирует.
     """
-    if not os.path.exists(file_path):
-        return False
 
-    df = pd.read_csv(
-        file_path,
-        encoding="utf-8",
-    )
+    df = _load_credit_info()
 
     if row_index not in df.index:
         return False
 
-    if not _chat_id_matches(
-        df.loc[row_index, "telegram_chat_id"],
-        chat_id,
-    ):
+    row_chat_id = str(df.at[row_index, "telegram_chat_id"]).strip()
+
+    if row_chat_id != str(chat_id).strip():
         return False
 
-    df.loc[
-        row_index,
-        "updated",
-    ] = date.today().strftime(
-        "%d.%m.%Y"
-    )
+    df.at[row_index, "updated"] = date.today().isoformat()
 
-    df.to_csv(
-        file_path,
-        index=False,
-        encoding="utf-8",
-    )
+    _save_credit_info(df)
 
     return True
 
 
-# ============================================================================
-# Удаление незавершённой карты
-# ============================================================================
+# ----------------------------------------------------------------------
+# Формирование информации о карте
+# ----------------------------------------------------------------------
 
-def delete_card_row(
-    chat_id: int,
-    row_index: int,
-    file_path: str = r"credit_info/credit_info.csv",
-) -> bool:
+def _build_card_report(row: pd.Series) -> str:
     """
-    Удаляет строку карты из CSV.
+    Сформировать подробную информацию о карте.
 
-    Используется при отмене операции добавления новой карты.
-
-    Перед удалением проверяется:
-        1. существует ли строка;
-        2. принадлежит ли она текущему пользователю.
-
-    При редактировании существующей карты эта функция
-    не вызывается.
-
-    Возвращает:
-        True — если строка успешно удалена;
-        False — если удалить её не удалось.
+    Первая строка — nickname владельца.
     """
-    if not os.path.exists(file_path):
-        return False
 
-    df = pd.read_csv(
-        file_path,
-        encoding="utf-8",
+    try:
+        chat_id = int(float(row["telegram_chat_id"]))
+    except (ValueError, TypeError):
+        chat_id = row["telegram_chat_id"]
+
+    nickname = _get_username(chat_id)
+
+    card_name = (
+        "—"
+        if _is_empty(row["card_name"])
+        else str(row["card_name"]).strip()
     )
 
-    if row_index not in df.index:
-        return False
+    grace_till = _format_date(row["grace_till"])
+    check_date = _format_date(row["check_date"])
+    pay_until = _format_date(row["pay_until"])
 
-    # Проверяем, что строка принадлежит пользователю.
-    if not _chat_id_matches(
-        df.loc[row_index, "telegram_chat_id"],
-        chat_id,
-    ):
-        return False
+    min_pay = _format_money(row["min_pay"])
+    debt = _format_money(row["debt"])
+    limit = _format_money(row["limit"])
 
-    df = df.drop(
-        index=row_index
+    paid = row["paid"]
+
+    if isinstance(paid, str):
+        paid_normalized = paid.strip().lower()
+
+        is_paid = paid_normalized in {
+            "true",
+            "1",
+            "yes",
+            "да",
+            "оплачено",
+        }
+    else:
+        is_paid = bool(paid)
+
+    paid_text = "✅ Оплачено" if is_paid else "❌ Не оплачено"
+
+    return (
+        f"<b>{nickname}</b>\n\n"
+        f"💳 <b>{card_name}</b>\n\n"
+        f"Грейс-период: {grace_till}\n"
+        f"Дата выписки: {check_date}\n"
+        f"Минимальный платеж: {min_pay}\n"
+        f"Оплатить до: {pay_until}\n"
+        f"Долг: {debt}\n"
+        f"Кредитный лимит: {limit}\n"
+        f"Статус: {paid_text}"
     )
 
-    df.to_csv(
-        file_path,
-        index=False,
-        encoding="utf-8",
-    )
+
+def get_detailed_card_info(chat_id: int, card_name: str):
+    """
+    Получить подробную информацию о карте.
+    """
+
+    row_index = get_card_row_index(card_name)
+
+    if row_index is None:
+        return None
+
+    df = _load_credit_info()
+
+    return _build_card_report(df.loc[row_index])
+
+
+
+# ----------------------------------------------------------------------
+# Общая сумма долга
+# ----------------------------------------------------------------------
+
+def total_debt(chat_id: int) -> float:
+    """
+    Посчитать общую сумму долга только текущего пользователя.
+    """
+
+    df = _load_credit_info()
+
+    user_cards = df[
+        df["telegram_chat_id"]
+        .astype(str)
+        .str.strip()
+        == str(chat_id).strip()
+    ]
+
+    if user_cards.empty:
+        return 0.0
+
+    debts = pd.to_numeric(
+        user_cards["debt"],
+        errors="coerce",
+    ).fillna(0)
+
+    return float(debts.sum())
+
+
+# ----------------------------------------------------------------------
+# Оплата карты
+# ----------------------------------------------------------------------
+
+def mark_card_as_paid(chat_id: int, card_name: str) -> bool:
+    """
+    Отметить собственную карту как оплаченную.
+    """
+
+    row_index = get_card_row_index(card_name)
+
+    if row_index is None:
+        return False
+
+    df = _load_credit_info()
+
+    df.at[row_index, "paid"] = True
+    df.at[row_index, "updated"] = date.today().isoformat()
+
+    _save_credit_info(df)
 
     return True
+
+
+# ----------------------------------------------------------------------
+# Ближайшие платежи
+# ----------------------------------------------------------------------
+
+def get_payments_for_reminder() -> list[dict]:
+    """
+    Получить ближайшие неоплаченные платежи по всем картам за период сегодня +2 дня.
+
+    В результат намеренно не входит фильтр по telegram_chat_id.
+    Платежи сортируются по дате pay_until.
+    В начале каждого уведомления указывается username владельца.
+    """
+
+
+def get_all_unpaid_payments() -> list[dict]:
+    """
+    Получить все неоплаченные платежи по всем картам всех пользователей.
+    В результат входят все карты, у которых:
+        - paid == False;
+        - указана корректная дата pay_until.
+    Ограничения по дате нет. Платежи сортируются по дате pay_until.
+    В начале каждого уведомления указывается username владельца.
+    """
+    df = _load_credit_info()
+
+    if df.empty:
+        return []
+
+    today = date.today()
+    payments = []
+
+    for _, row in df.iterrows():
+
+        # Поле paid всегда логического типа True/False.
+        if row["paid"] == True:
+            continue
+        # если уже оплачено или не указана дата платежа, то пропускаем
+        if _is_empty(row["pay_until"]):
+            continue
+
+        try:
+            pay_until_date = pd.to_datetime(
+                str(row["pay_until"]).strip(),
+                format="%Y-%m-%d",
+                errors="raise",
+            ).date()
+        except (ValueError, TypeError):
+            continue
+
+        # Просроченные платежи не включаем.
+        if pay_until_date < today:
+            continue
+
+        try:
+            chat_id = int(float(row["telegram_chat_id"]))
+        except (ValueError, TypeError):
+            chat_id = row["telegram_chat_id"]
+
+        nickname = _get_username(chat_id)
+
+        card_name = (
+            "—"
+            if _is_empty(row["card_name"])
+            else str(row["card_name"]).strip()
+        )
+
+        payments.append(
+            {
+                "chat_id": chat_id,
+                "nickname": nickname,
+                "card_name": card_name,
+                "date": pay_until_date,
+                "text": (
+                    f"<b>{nickname}</b>\n"
+                    f"💳 {card_name}\n"
+                    f"Оплатить до: "
+                    f"{_format_date(row['pay_until'])}\n"
+                    f"Минимальный платеж: "
+                    f"{_format_money(row['min_pay'])}\n"
+                    f"Долг: "
+                    f"{_format_money(row['debt'])}"
+                ),
+            }
+        )
+
+    payments.sort(key=lambda item: item["date"])
+
+    return payments
