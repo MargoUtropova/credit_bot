@@ -1,5 +1,5 @@
 from datetime import datetime
-
+from funcs.data import _load_credit_info
 
 def _validate_card_name(value: str) -> bool:
     """Проверить формат НазваниеБанка_1234."""

@@ -125,10 +125,9 @@ def _get_username(chat_id: int) -> str:
 def get_card_row_index(card_name: str) -> int | None:
     """Найти карту глобально по уникальному card_name."""
     df = _load_credit_info()
-
+    card_name = card_name.strip().casefold()
     mask = (
-        df["card_name"].fillna("").astype(str).str.strip()
-        == card_name.strip()
+        df["card_name"].fillna("").astype(str).str.strip() == card_name
     )
     matched = df.index[mask]
 
